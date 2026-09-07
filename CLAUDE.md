@@ -31,24 +31,42 @@ error even when the service account genuinely has access.
 
 ## Running the uploader
 ```
-node upload_to_drive.js <path-to-service-account-key.json> <image1> [image2 ...]
+node upload_to_drive.js <env|path-to-service-account-key.json> <image1> [image2 ...]
 ```
+- `env` reads the key JSON from `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` (used by the
+  scheduled routine — see below); a file path uses that key file directly
+  (local/manual runs).
 - The service account's `client_email` must be shared on the target Drive
   folder with at least Editor access, or uploads fail with "File not found".
 - The folder ID is hardcoded in `upload_to_drive.js` as `DRIVE_FOLDER_ID`.
 
 ## Credentials
 - `service_account_json_key_claudegwscli-502400-3a7969b176ed.json.json` in the
-  project root is a live Google Cloud service account key. **Never commit
-  this file.** Add it (and any other `*service_account*.json` / `*.json.json`
-  key files) to `.gitignore` before this project is pushed anywhere.
-- No Supabase credentials exist in this project yet — table access so far has
-  only gone through the Supabase MCP connection inside Claude Code sessions,
-  not a standalone script.
+  project root is a live Google Cloud service account key, gitignored. **Never
+  commit this file** (or any other `*service_account*.json` / `*.json.json`
+  key file).
+- The scheduled cloud routine (below) needs the *entire contents* of that key
+  file — not just the `private_key` field — pasted as the value of a
+  `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` env var on the "Default" cloud environment
+  (`env_01DYHNjMesGeuq9ABo7W6m6f`), via claude.ai/code environment settings.
+  `upload_to_drive.js` does `JSON.parse()` on that value, so a partial paste
+  (e.g. just the private key string) fails.
+- No Supabase API credential exists in this project — all Supabase access
+  (interactive sessions and the scheduled routine) goes through the Supabase
+  MCP connector, which can read and write `insta_stories` directly.
 
-## Not yet built
-- No script reads `insta_stories` directly from Supabase and feeds URLs into
-  the uploader automatically — the one run so far was manual (download each
-  image, rename, then call `upload_to_drive.js`). If this needs to become a
-  recurring/automated pipeline, it will need Supabase credentials wired in and
-  the download+rename steps scripted too.
+## Scheduled routine: "insta_stories Drive Uploader"
+A Claude Code cloud routine (id `trig_01LH7zt2K5iXRXeyj1Dfjpb8`) automates the
+whole pipeline: find `insta_stories` rows with `status IS NULL` (via the
+Supabase MCP connector), download each `insta_story_image_url`, upload via
+`node upload_to_drive.js env <file>`, and set `status = 'processed'` only
+after a confirmed successful upload — failures leave a row's status NULL so
+it's retried on the next run. Cron `0 4 * * *` UTC (12:00 PM Philippines time
+daily). **Currently paused** (`enabled: false`) — do not enable it until
+`GOOGLE_SERVICE_ACCOUNT_KEY_JSON` is confirmed set correctly on the cloud
+environment. Cloud routines get a fresh git clone of this repo each run with
+no local files or env vars from this machine — `node_modules` isn't checked
+out (gitignored), so the routine's prompt runs `npm install` first.
+Its `mcp_connections` were deliberately trimmed to Supabase only; routine
+creation via the API defaults to attaching every connected MCP connector on
+the account if not restricted, which is more access than the job needs.

@@ -1,0 +1,67 @@
+================================================================================
+CHAT HISTORY EXPORT — 2026-09-07
+Session: Built a paused, scheduled cloud routine to process insta_stories rows
+(status IS NULL) into the Drive folder and mark them 'processed'.
+================================================================================
+
+--------------------------------------------------------------------------------
+USER:
+Asked for a Claude Code routine that processes insta_stories rows where
+`status` is null: uploads each row's image to the Drive folder, then sets
+`status` to 'processed'. Keep it paused for now. Schedule: once daily at
+12:00 PM Philippine time (UTC+8).
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Invoked the `schedule` skill (RemoteTrigger-based cloud routines). Checked the
+`insta_stories` table schema via Supabase and confirmed a `status` text column
+(nullable) already exists — no migration needed.
+
+Identified a key constraint: cloud routines run in an isolated sandbox with no
+access to this machine's local files, so the service account JSON key used by
+`upload_to_drive.js` wouldn't be available there. Also confirmed the earlier
+base64-inline-upload limitation isn't session-specific — it's a fundamental
+limit on how much data can pass through a tool-call argument, so it would
+block a cloud routine the same way it blocked the interactive session. Asked
+the user how the routine should get the credential; user chose an environment
+variable on the cloud environment (over storing it in Supabase).
+
+Updated `upload_to_drive.js` to support reading the service account key from a
+`GOOGLE_SERVICE_ACCOUNT_KEY_JSON` env var (pass "env" as the first CLI arg)
+as an alternative to a local key file path, so the same script works both
+locally and in the cloud routine. Committed and pushed this change to
+https://github.com/yen93/insta_scraper (main).
+
+Created the routine via RemoteTrigger:
+- Name: "insta_stories Drive Uploader", id `trig_01LH7zt2K5iXRXeyj1Dfjpb8`
+- Paused (`enabled: false`) per the user's request
+- Schedule: `0 4 * * *` UTC (= 12:00 PM Philippines time daily)
+- Repo source: https://github.com/yen93/insta_scraper
+- Prompt: query `public.insta_stories` via the Supabase MCP connector for rows
+  where `status IS NULL`, download each `insta_story_image_url` with curl
+  (using a browser User-Agent, since Instagram's CDN can reject default
+  clients), rename to a readable filename, upload via
+  `node upload_to_drive.js env <file>`, and only mark that row's `status` as
+  'processed' via the Supabase MCP connector after a confirmed successful
+  upload — leaving failed rows untouched (NULL) so they retry next run.
+
+The routine's initial creation attached every one of the user's connected MCP
+connectors by default (Gmail, Calendar, ActiveCampaign, monday.com,
+RocketReach, Fathom) rather than just Supabase — caught this and updated the
+routine's `mcp_connections` to Supabase only.
+
+Told the user the routine still needs `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` set as
+an environment variable on the "Default" cloud environment (outside this
+session's access) — value should be the full contents of the service account
+JSON key file — and to do that via the claude.ai/code environment settings.
+
+User reported they'd only pasted the `private_key` field's value into that
+env var, not the whole file. Assistant clarified this is incorrect: the
+script `JSON.parse()`s the env var expecting the entire key file object
+(type, project_id, private_key_id, private_key, client_email, client_id,
+etc.), not just one field, and asked the user to replace it with the full
+JSON content instead.
+
+================================================================================
+END OF EXPORT
+================================================================================

@@ -8,9 +8,12 @@ SCRIPTS
   a fixed Google Drive folder (id 1lYvSd_IpE_wL1T0clJpxt0AC6rbRvbiy, "Instagram
   Story Scraper") via the Drive v3 API, authenticating as a Google Cloud
   service account. Usage:
-    node upload_to_drive.js <path-to-service-account-key.json> <image1> [image2 ...]
-  Requires: a service account JSON key with the Drive API enabled on its GCP
-  project, and that key's client_email must be shared on the target Drive
+    node upload_to_drive.js <env|path-to-service-account-key.json> <image1> [image2 ...]
+  Pass "env" as the first arg to read the key JSON from the
+  GOOGLE_SERVICE_ACCOUNT_KEY_JSON environment variable (used by the scheduled
+  cloud routine below), or a file path to use a key file directly (local/manual
+  runs). Requires: a service account JSON key with the Drive API enabled on its
+  GCP project, and that key's client_email must be shared on the target Drive
   folder (role Editor/fileOrganizer). The target folder lives inside a Shared
   Drive, so the script passes supportsAllDrives: true on the create call —
   omitting that flag causes a misleading "File not found" error even when
@@ -18,22 +21,34 @@ SCRIPTS
 
 EXTERNAL INTEGRATIONS
 - Google Drive API (Drive v3) — accessed via the `googleapis` npm package
-  using a service account. Key file currently lives in the project root as
-  `service_account_json_key_claudegwscli-502400-3a7969b176ed.json.json`
-  (gitignored — see CLAUDE.md). GCP project: claudegwscli-502400. Service
-  account: insta-drive-uploader@claudegwscli-502400.iam.gserviceaccount.com.
-- Supabase project "MAGTestProject" (id aivitcomiywiysrfwqxt) — read via the
-  connected Supabase MCP tools in this session (no standalone script
-  credential exists for it yet).
+  using a service account. For local/manual runs, the key file lives in the
+  project root as `service_account_json_key_claudegwscli-502400-3a7969b176ed.json.json`
+  (gitignored — see CLAUDE.md). For the scheduled routine, the same key's full
+  JSON contents are expected in the GOOGLE_SERVICE_ACCOUNT_KEY_JSON env var on
+  the "Default" cloud environment (env_01DYHNjMesGeuq9ABo7W6m6f), configured
+  via claude.ai/code environment settings — not stored in this repo or in
+  Supabase. GCP project: claudegwscli-502400. Service account:
+  insta-drive-uploader@claudegwscli-502400.iam.gserviceaccount.com.
+- Supabase project "MAGTestProject" (id aivitcomiywiysrfwqxt) — read/written
+  via the Supabase MCP connector, both in interactive sessions and by the
+  scheduled routine below. No standalone Supabase API credential exists in
+  this project.
 
 DATA STORES
 - Supabase table public.insta_stories — columns: id, created_at, speaker,
-  insta_story_image_url, insta_story_vid_url. Populated by an external
-  Instagram-story scraping process (not part of this project directory).
+  insta_story_image_url, insta_story_vid_url, status (text, nullable).
+  Populated by an external Instagram-story scraping process (not part of this
+  project directory). `status` is set to 'processed' once a row's image has
+  been uploaded to Drive; NULL means not yet processed.
 
 AUTOMATIONS / ROUTINES
-- None yet. The image download + Drive upload done this session was a manual,
-  one-time run for the 5 rows present in insta_stories at the time (all
-  speaker "Vicki Anstey", scraped 2026-09-07) — not wired to run automatically
-  off new Supabase rows.
+- "insta_stories Drive Uploader" (Claude Code scheduled cloud routine, id
+  trig_01LH7zt2K5iXRXeyj1Dfjpb8) — cron 0 4 * * * UTC (12:00 PM Philippines
+  time daily). Currently PAUSED (enabled: false) pending the
+  GOOGLE_SERVICE_ACCOUNT_KEY_JSON env var being set correctly on the cloud
+  environment. When it runs, it queries insta_stories for status IS NULL,
+  downloads each insta_story_image_url, uploads via upload_to_drive.js (env
+  mode), and sets status = 'processed' only after a confirmed successful
+  upload — failed rows are left NULL to retry on the next run. Attached MCP
+  connector: Supabase only. Git source: this repo (main).
 ================================================================================
