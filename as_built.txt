@@ -1,0 +1,39 @@
+================================================================================
+AS-BUILT — insta_scraper
+Last updated: 2026-09-07
+================================================================================
+
+SCRIPTS
+- upload_to_drive.js — CLI script. Uploads one or more local image files into
+  a fixed Google Drive folder (id 1lYvSd_IpE_wL1T0clJpxt0AC6rbRvbiy, "Instagram
+  Story Scraper") via the Drive v3 API, authenticating as a Google Cloud
+  service account. Usage:
+    node upload_to_drive.js <path-to-service-account-key.json> <image1> [image2 ...]
+  Requires: a service account JSON key with the Drive API enabled on its GCP
+  project, and that key's client_email must be shared on the target Drive
+  folder (role Editor/fileOrganizer). The target folder lives inside a Shared
+  Drive, so the script passes supportsAllDrives: true on the create call —
+  omitting that flag causes a misleading "File not found" error even when
+  permissions are correct.
+
+EXTERNAL INTEGRATIONS
+- Google Drive API (Drive v3) — accessed via the `googleapis` npm package
+  using a service account. Key file currently lives in the project root as
+  `service_account_json_key_claudegwscli-502400-3a7969b176ed.json.json`
+  (gitignored — see CLAUDE.md). GCP project: claudegwscli-502400. Service
+  account: insta-drive-uploader@claudegwscli-502400.iam.gserviceaccount.com.
+- Supabase project "MAGTestProject" (id aivitcomiywiysrfwqxt) — read via the
+  connected Supabase MCP tools in this session (no standalone script
+  credential exists for it yet).
+
+DATA STORES
+- Supabase table public.insta_stories — columns: id, created_at, speaker,
+  insta_story_image_url, insta_story_vid_url. Populated by an external
+  Instagram-story scraping process (not part of this project directory).
+
+AUTOMATIONS / ROUTINES
+- None yet. The image download + Drive upload done this session was a manual,
+  one-time run for the 5 rows present in insta_stories at the time (all
+  speaker "Vicki Anstey", scraped 2026-09-07) — not wired to run automatically
+  off new Supabase rows.
+================================================================================
