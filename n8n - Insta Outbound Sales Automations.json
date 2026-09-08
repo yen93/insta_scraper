@@ -1,0 +1,848 @@
+{
+  "name": "Insta Outbound Sales Automations",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -5264,
+        2064
+      ],
+      "id": "e684b852-a0ee-43fa-b9a1-231b5ba01b2c",
+      "name": "Schedule Trigger",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select distinct batch from speakers\nwhere batch is not null",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -5088,
+        2064
+      ],
+      "id": "05fd56f7-d29c-4839-ba00-067231d4355b",
+      "name": "Execute a SQL query",
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "kthnW5Kr1bhfcVQC",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Get Batch Numbers",
+        "height": 80,
+        "width": 150
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -5088,
+        1952
+      ],
+      "id": "76241e4b-1309-4fbf-9c53-f51b485c058c",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -4880,
+        2064
+      ],
+      "id": "e5a93af6-77e9-416a-991b-850a8bdee7b9",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select created_at from insta_batches_to_run\n  where batch_no =  1\n  and created_at >= now() - interval '24 hrs'\norder by created_at desc\nlimit 1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -4640,
+        2160
+      ],
+      "id": "a7c93caa-bce6-4648-857a-8e5cb50a94bb",
+      "name": "Execute a SQL query2",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "kthnW5Kr1bhfcVQC",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from speakers\nwhere status is null\nAND insta_profile_link IS NOT NULL\nand insta_batch_no = {{ $('Loop Over Items').item.json.batch }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -4240,
+        2272
+      ],
+      "id": "25304321-de5d-496b-b73c-3e7165ff655d",
+      "name": "Execute a SQL query1",
+      "alwaysOutputData": false,
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "kthnW5Kr1bhfcVQC",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "insta_stories",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "insta_story_image_url",
+              "fieldValue": "={{ $('Loop Over Items1').item.json.imageUrl }}"
+            },
+            {
+              "fieldId": "insta_story_vid_url",
+              "fieldValue": "={{ $('Loop Over Items1').item.json.videoUrl }}"
+            },
+            {
+              "fieldId": "insta_handle",
+              "fieldValue": "={{ $('Loop Over Items1').item.json.username }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2176,
+        2304
+      ],
+      "id": "45db1b5e-1782-4a5e-b243-cdaabd58e132",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kHRif9Z1yFEMSg4S",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "insta_stories",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "insta_story_image_url",
+              "keyValue": "={{ $json.imageUrl }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2656,
+        2176
+      ],
+      "id": "34feea52-da5b-4eb3-97da-331a39a417a7",
+      "name": "Get a row",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "kHRif9Z1yFEMSg4S",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2912,
+        2064
+      ],
+      "id": "3be371ec-ff5f-4e24-89af-7c47381e0e4c",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e366ddec-82e0-4b85-915b-4f0caa45257d",
+              "leftValue": "={{ $json.insta_story_image_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -2368,
+        2176
+      ],
+      "id": "0bbab0a9-fc16-42c7-9a4b-0901b24aa810",
+      "name": "If1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2704,
+        1968
+      ],
+      "id": "97003210-3d62-46af-a020-44534aec18b6",
+      "name": "Limit1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "20652796-0977-4a03-83cc-dd66d6bf999b",
+              "leftValue": "={{ $json.created_at }}",
+              "rightValue": "",
+              "operator": {
+                "type": "dateTime",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -4432,
+        2160
+      ],
+      "id": "20adcf5e-208a-4e25-aeea-caf80ecd0d5f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -4032,
+        2272
+      ],
+      "id": "7c6923f6-5ffc-431b-b81f-c9b89717c760",
+      "name": "Loop Over Items2"
+    },
+    {
+      "parameters": {
+        "tableId": "insta_batches_to_run",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "batch_no",
+              "fieldValue": "={{ $('Loop Over Items').item.json.batch }}"
+            },
+            {
+              "fieldId": "speaker_name",
+              "fieldValue": "={{ $json.proper_name }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -3824,
+        2448
+      ],
+      "id": "3e99a7d5-cb6e-46cf-91f0-8effbbc1897c",
+      "name": "Create a row1",
+      "executeOnce": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "kHRif9Z1yFEMSg4S",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \n  a.*\n  ,b.insta_name,\n  b.insta_handle,\n  b.insta_profile_link\nfrom insta_batches_to_run a\nleft join speakers b\non a.speaker_name = b.proper_name\n  where (\n    is_processed = false\n    or is_processed is null\n  )\n  and a.created_at >= now() - interval '24 hours'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -3648,
+        2064
+      ],
+      "id": "2d18f4a4-45df-4d26-819f-63e58f570339",
+      "name": "Execute a SQL query3",
+      "credentials": {
+        "postgres": {
+          "id": "kthnW5Kr1bhfcVQC",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -3904,
+        1840
+      ],
+      "id": "7110cc4d-e5fa-4453-a32a-95df63a21ce4",
+      "name": "Schedule Trigger1",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Get speakers for processing",
+        "height": 80,
+        "width": 198
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -3904,
+        1728
+      ],
+      "id": "8ab20cae-0209-42b4-bfb8-3512c86ea25f",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -3824,
+        2064
+      ],
+      "id": "8851f541-31ba-44f9-8ee7-c175ecdb7b60",
+      "name": "Limit2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the links as an array of strings\nconst usernames = $input.all().map(item => item.json.insta_handle);\n\nreturn [\n  {\n    json: {\n      limit: 1,\n      resultsType: \"stories\",\n      usernames: usernames\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3440,
+        2064
+      ],
+      "id": "0009ad21-e132-4d76-99c6-e4e81590008f",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "Run actor and get dataset",
+        "actorSource": "store",
+        "actorId": {
+          "__rl": true,
+          "value": "x6rkhMUeZ3X6Qw4Vd",
+          "mode": "list",
+          "cachedResultName": "Instagram Stories Scraper (burbn/anonymous-instagram-story-viewer)",
+          "cachedResultUrl": "https://console.apify.com/actors/x6rkhMUeZ3X6Qw4Vd/input"
+        },
+        "customBody": "={\n    \"usernames\": \n         {{ JSON.stringify($json.usernames) }}\n}"
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        -3200,
+        2064
+      ],
+      "id": "cdcafeea-797b-4e00-a246-8c2a8944dfc3",
+      "name": "Run an Actor and get dataset",
+      "alwaysOutputData": true,
+      "credentials": {
+        "apifyApi": {
+          "id": "w3LbtvtHVs46k5bb",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE insta_stories AS a\nSET speaker = b.proper_name\nFROM speakers AS b\nWHERE a.insta_handle = b.insta_handle\n  AND a.insta_story_image_url IS NOT NULL\n  AND a.insta_handle IS NOT NULL\n  AND a.speaker IS NULL;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2496,
+        1968
+      ],
+      "id": "e38f365f-b483-49b6-9896-bdb0fc525de1",
+      "name": "Execute a SQL query4",
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "kthnW5Kr1bhfcVQC",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/muhammetakkurtt~instagram-scraper/run-sync-get-dataset-items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"limit\": 1,\n  \"resultsType\": \"stories\",\n  \"usernames\": [\n    \"{{ $json.insta_profile_link }}\"\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -3200,
+        2288
+      ],
+      "id": "6202290e-cab7-47d9-9210-213d312daae0",
+      "name": "HTTP Request",
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "qWVmGF3RxYA9X3Th",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        1968
+      ],
+      "id": "00eeb301-bf95-446a-a3c6-2983f10363dc",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/claude_code/routines/trig_01LH7zt2K5iXRXeyj1Dfjpb8/fire",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "experimental-cc-routine-2026-04-01"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -2080,
+        1968
+      ],
+      "id": "d11dcace-2748-4c29-9680-e4ff7d68ec67",
+      "name": "HTTP Request1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3GDbqaqK9e1hjJE8",
+          "name": "Header Auth account 3"
+        },
+        "httpBearerAuth": {
+          "id": "5UAhepaP9BOzoFmn",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -2288,
+        1776
+      ],
+      "id": "65d2f345-47cb-4c74-98f6-d2596997c856",
+      "name": "Schedule Trigger2"
+    },
+    {
+      "parameters": {
+        "content": "## Call Claude Routine",
+        "height": 80,
+        "width": 256
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        1664
+      ],
+      "id": "d7e0a7f8-1d9e-411b-9481-1c60fc3d06e0",
+      "name": "Sticky Note2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a row": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "Limit1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Limit2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items2": {
+      "main": [
+        [
+          {
+            "node": "Limit2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create a row1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query3": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit1": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit2": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Run an Actor and get dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run an Actor and get dataset": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query4": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "7d0d9fd7-6e2e-4b92-9fa1-fb836d02b972",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7f953834d5dd197c4701af67007fb2948e763654d7a2789eb73782d4f33207d3"
+  },
+  "id": "R6VdvISsfVnq39Tr",
+  "tags": []
+}

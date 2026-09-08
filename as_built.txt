@@ -1,6 +1,6 @@
 ================================================================================
 AS-BUILT — insta_scraper
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 ================================================================================
 
 SCRIPTS
@@ -36,19 +36,74 @@ EXTERNAL INTEGRATIONS
 
 DATA STORES
 - Supabase table public.insta_stories — columns: id, created_at, speaker,
-  insta_story_image_url, insta_story_vid_url, status (text, nullable).
-  Populated by an external Instagram-story scraping process (not part of this
-  project directory). `status` is set to 'processed' once a row's image has
-  been uploaded to Drive; NULL means not yet processed.
+  insta_story_image_url, insta_story_vid_url, insta_handle, status (text,
+  nullable). Populated by the n8n workflow below. `status` is set to
+  'processed' once a row's image has been uploaded to Drive; NULL means not
+  yet processed.
+- Supabase table public.speakers — columns include proper_name, batch,
+  insta_handle, insta_profile_link, status. Source list of people to scrape
+  Instagram stories for; owned/populated outside this project.
+- Supabase table public.insta_batches_to_run — columns: batch_no,
+  speaker_name, created_at, is_processed. A work queue the n8n workflow uses
+  to track which (batch, speaker) pairs are due for a story-scrape pass in
+  the last 24h.
+
+EXTERNAL INTEGRATIONS (continued)
+- Apify actor "Instagram Stories Scraper" (burbn/anonymous-instagram-story-
+  viewer, id x6rkhMUeZ3X6Qw4Vd) — called from n8n via the Apify node,
+  credential "Apify account". Given a batch of insta_handles, returns each
+  one's current story media (image/video URLs).
 
 AUTOMATIONS / ROUTINES
 - "insta_stories Drive Uploader" (Claude Code scheduled cloud routine, id
   trig_01LH7zt2K5iXRXeyj1Dfjpb8) — cron 0 4 * * * UTC (12:00 PM Philippines
-  time daily). Currently PAUSED (enabled: false) pending the
-  GOOGLE_SERVICE_ACCOUNT_KEY_JSON env var being set correctly on the cloud
-  environment. When it runs, it queries insta_stories for status IS NULL,
+  time daily), currently ENABLED. Queries insta_stories for status IS NULL,
   downloads each insta_story_image_url, uploads via upload_to_drive.js (env
   mode), and sets status = 'processed' only after a confirmed successful
   upload — failed rows are left NULL to retry on the next run. Attached MCP
   connector: Supabase only. Git source: this repo (main).
+  Also configured as an API trigger: an API token was generated for it, and
+  it can be fired on demand with `POST
+  https://api.anthropic.com/v1/claude_code/routines/trig_01LH7zt2K5iXRXeyj1Dfjpb8/fire`
+  (Bearer auth with that token, plus `anthropic-version` and `anthropic-beta`
+  headers) — both this direct trigger and the cron schedule are active at
+  the same time. This is called from the n8n workflow below (HTTP Request1
+  node) both on its own schedule (Schedule Trigger2) and right after a fresh
+  scrape completes.
+  KNOWN ISSUE (unresolved as of 2026-09-08): GOOGLE_SERVICE_ACCOUNT_KEY_JSON
+  on the "Default" cloud environment currently has the literal text
+  `GOOGLE_SERVICE_ACCOUNT_KEY_JSON=` prefixed onto the actual JSON value
+  (the whole `KEY=value` line was pasted into the value field instead of
+  just the bare JSON). A run on 2026-09-08 only succeeded because the
+  routine detected this mid-run and stripped the prefix for that session
+  only — the fix was never persisted to the actual env var, so the next run
+  that finds real rows to upload will fail identically to the original
+  credential bug unless this is corrected in claude.ai/code environment
+  settings (value should be ONLY the raw `{...}` JSON, no `KEY=` prefix).
+
+- "Insta Outbound Sales Automations" (n8n workflow; export checked into this
+  repo as `n8n - Insta Outbound Sales Automations.json`) — the external
+  Instagram-story scraping process CLAUDE.md refers to. Three stages:
+    1. Batch discovery (Schedule Trigger, DISABLED) — finds distinct `batch`
+       values in `speakers`, and for each one not already queued in the last
+       24h, inserts its unprocessed speakers into `insta_batches_to_run`.
+    2. Story scrape (Schedule Trigger1, DISABLED) — pulls speakers queued in
+       `insta_batches_to_run` in the last 24h, batches their insta_handles
+       into one Apify actor call, inserts any new insta_stories rows found,
+       then backfills `speaker` names onto rows missing them.
+    3. Fire Claude routine (Schedule Trigger2, ENABLED) — calls the routine
+       above via its API trigger.
+  KNOWN ISSUES (unresolved as of 2026-09-08):
+    - Only stage 3 is actually scheduled; stages 1-2 (which populate new
+      insta_stories rows) are both disabled, so nothing currently feeds the
+      routine new rows automatically unless run manually in n8n.
+    - The "Execute a SQL query2" node hardcodes `batch_no = 1` instead of
+      referencing the current batch from the loop it runs inside
+      ($('Loop Over Items').item.json.batch), so every iteration checks
+      batch 1's recent-run status regardless of which batch it's actually
+      processing.
+  Also contains an apparently-orphaned standalone "HTTP Request" node (calls
+  a different Apify actor, muhammetakkurtt~instagram-scraper, directly via
+  REST) with no incoming connection in the workflow — looks like a leftover
+  from an earlier iteration, not part of the active path.
 ================================================================================

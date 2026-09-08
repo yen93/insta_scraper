@@ -1,0 +1,157 @@
+================================================================================
+CHAT HISTORY EXPORT — 2026-09-08
+Session: Diagnosed two scheduled-routine failures (bad credential, then a
+network egress block), got the routine callable from an external n8n
+workflow, and reviewed that n8n workflow's full pipeline.
+================================================================================
+
+--------------------------------------------------------------------------------
+USER:
+Pasted a routine-run summary: the "insta_stories Drive Uploader" cloud routine
+found 6 pending rows (ids 11-16) but refused to process any of them because
+GOOGLE_SERVICE_ACCOUNT_KEY_JSON on the cloud environment was literally set to
+the 31-character string "GOOGLE_SERVICE_ACCOUNT_KEY_JSON" (the variable's own
+name), not the key JSON. The run correctly made no Supabase writes and left
+all 6 rows NULL for retry.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Verified via RemoteTrigger that the routine (trig_01LH7zt2K5iXRXeyj1Dfjpb8) was
+already `enabled: false`, matching CLAUDE.md — so no destructive state to fix
+there. Validated the local service account key file
+(service_account_json_key_claudegwscli-502400-3a7969b176ed.json.json) parses
+as valid JSON with client_email
+insta-drive-uploader@claudegwscli-502400.iam.gserviceaccount.com. Explained
+there is no tool available to read/write claude.ai cloud-environment env vars
+— that's a manual step in claude.ai/code environment settings — and gave the
+user those steps.
+
+--------------------------------------------------------------------------------
+USER:
+Reported the environment-variable UI rejected the pasted JSON with: `Couldn't
+parse ""type": "service_account",". Use KEY=value format.`
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Diagnosed that the env-var box parses bulk-pasted text as .env-style
+`KEY=value` lines, so a pretty-printed multi-line JSON value fails. Generated
+a single-line `GOOGLE_SERVICE_ACCOUNT_KEY_JSON=<minified JSON>` form via a
+Node script (JSON.parse + JSON.stringify), writing it to a scratchpad temp
+file without ever printing the actual key content into the chat.
+
+--------------------------------------------------------------------------------
+USER:
+Couldn't find that file.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Explained the scratchpad path lives under a hidden AppData\Local\Temp
+directory. Copied the single-line value into the project root instead, as
+`google_service_account_key.env` — confirmed via `git check-ignore` that it
+matches the repo's existing `*.env` gitignore pattern — and told the user to
+paste its contents into the claude.ai env var field, then delete the file.
+
+--------------------------------------------------------------------------------
+USER:
+Pasted a second routine-run result: after the credential paste, the run hit a
+different wall — both Instagram CDN domains (fbcdn.net, cdninstagram.com)
+were rejected at the cloud sandbox's egress proxy with `403` policy denials.
+The run correctly stopped without retrying, made no Supabase/Drive changes,
+and left all 6 rows NULL.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Pulled the actual run log via RemoteTrigger (session cse_01Fr746eyULUrwCWZEP4ARdM)
+and confirmed this independently: the proxy's `__agentproxy/status` endpoint
+showed `connect_rejected` (403 to CONNECT) for both CDN hosts — a genuine
+network-policy block, not a code bug, and a different layer from the
+credential issue. Explained this requires adding `*.fbcdn.net` /
+`*.cdninstagram.com` to the cloud environment's outbound allowlist (or an
+unrestricted-egress environment), which is also only configurable in
+claude.ai/code environment settings — no tool access to change it directly.
+Offered to document this as a new CLAUDE.md gotcha; user hadn't answered yet
+when the topic moved on.
+
+--------------------------------------------------------------------------------
+USER:
+Reported it now works, and that they converted the routine into an "API
+trigger" (generated a token + API URL) so it can be fired externally. Asked
+how to configure an n8n HTTP Request node to call it.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Explained the general n8n HTTP node shape for this (the underlying endpoint
+matches the same `POST /v1/code/triggers/{trigger_id}/run`-style contract
+used internally): POST method, paste the given API URL, Bearer-auth
+credential holding the token, JSON content type, optional empty body. Flagged
+that the exact header name/body shape was inferred rather than confirmed from
+what claude.ai actually displayed, and asked the user to double check.
+
+--------------------------------------------------------------------------------
+USER:
+Confirmed they selected Bearer Auth as the Generic Auth Type and pasted the
+token into that credential, toggled Send Headers on, and asked what to put in
+the header fields.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Clarified that n8n's Bearer Auth credential already injects the `Authorization`
+header automatically — don't add it manually. The only header actually needed
+under Send Headers is `Content-Type: application/json`.
+
+--------------------------------------------------------------------------------
+USER:
+Reported the n8n call succeeded, and shared the exported workflow JSON
+("n8n - Insta Outbound Sales Automations.json") so the assistant would have
+full context on what was built.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Read the full workflow and summarized its three stages: (1) batch discovery
+from `speakers` into `insta_batches_to_run` (Schedule Trigger, disabled), (2)
+scraping stories per batch via an Apify actor and inserting new rows into
+Supabase `insta_stories`, then backfilling `speaker` names (Schedule Trigger1,
+disabled), and (3) firing the Claude routine via the n8n HTTP node the user
+had just gotten working (Schedule Trigger2, the only one currently enabled) —
+POSTing to
+`https://api.anthropic.com/v1/claude_code/routines/trig_01LH7zt2K5iXRXeyj1Dfjpb8/fire`
+with Bearer auth plus `anthropic-version`/`anthropic-beta` headers.
+
+Flagged two things for the user to confirm are intentional: (a) only stage 3
+is actually scheduled — stages 1-2, which populate new `insta_stories` rows
+in the first place, are both disabled, so nothing currently feeds the routine
+new rows automatically; (b) the "Execute a SQL query2" node hardcodes
+`batch_no = 1` instead of referencing the current loop's batch value, so every
+iteration of the batch loop checks batch 1's status regardless of which batch
+it's actually on.
+
+--------------------------------------------------------------------------------
+USER:
+Ran /dcp.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+While gathering current state for these docs, re-checked the routine via
+RemoteTrigger and found it now has `enabled: true` (re-enabled, cron
+`0 4 * * *` UTC still active) alongside the new API token
+(`api_token_created_at` present) — so both the cron and the n8n-driven direct
+API fire are live simultaneously.
+
+Pulled the two run logs since the egress fix (sessions
+cse_01MFWG5GH2zRr8Jc6SLLNJ8D and cse_01WVbLop6mYG3o6tcW4PsqNH) and found an
+important unresolved issue: the first of those runs *did* successfully
+download, upload, and mark all 6 rows (ids 11-16) processed — but only
+because the routine detected mid-run that `GOOGLE_SERVICE_ACCOUNT_KEY_JSON`'s
+value still literally contains the text `GOOGLE_SERVICE_ACCOUNT_KEY_JSON=`
+prefixed onto the real JSON (i.e. the user pasted the whole `KEY=value` line
+into the value field, rather than putting just the bare JSON in the value
+with the key name in the platform's separate name field), and worked around
+it in-session by stripping that prefix before calling `upload_to_drive.js`.
+That workaround was never persisted to the actual environment variable, so
+the underlying misconfiguration is still live and will break the very next
+run that finds real rows to upload (the following run found 0 pending rows,
+so the bug didn't resurface yet — it's latent, not fixed). This will be
+surfaced to the user directly and written into CLAUDE.md/as_built.txt.
+================================================================================
+END OF EXPORT
+================================================================================
