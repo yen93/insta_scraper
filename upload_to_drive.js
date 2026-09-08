@@ -23,11 +23,15 @@ if (files.length === 0) {
 async function main() {
   const authOptions = { scopes: ['https://www.googleapis.com/auth/drive'] };
   if (keyArg === 'env') {
-    const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON;
+    let raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON;
     if (!raw) {
       console.error('GOOGLE_SERVICE_ACCOUNT_KEY_JSON is not set.');
       process.exit(1);
     }
+    // Defensive: the env var has previously been set to "GOOGLE_SERVICE_ACCOUNT_KEY_JSON=<json>"
+    // (the whole KEY=value line pasted into the value field) instead of just the bare JSON.
+    const prefix = 'GOOGLE_SERVICE_ACCOUNT_KEY_JSON=';
+    if (raw.startsWith(prefix)) raw = raw.slice(prefix.length);
     authOptions.credentials = JSON.parse(raw);
   } else {
     authOptions.keyFile = keyArg;
