@@ -2,20 +2,26 @@
 
 ## What this project is
 A tool for pulling Instagram story images referenced in the Supabase table
-`public.insta_stories` (project "MAGTestProject", id `aivitcomiywiysrfwqxt`)
-and saving them into a Google Drive folder ("Instagram Story Scraper",
-id `1lYvSd_IpE_wL1T0clJpxt0AC6rbRvbiy`). The `insta_stories` table is populated
-by an external n8n workflow, "Insta Outbound Sales Automations" (exported as
+`public.insta_stories` (project "MAGTestProject", id `aivitcomiywiysrfwqxt`),
+saving them into a Google Drive folder ("Instagram Story Scraper",
+id `1lYvSd_IpE_wL1T0clJpxt0AC6rbRvbiy`), and then analyzing each saved image
+for booking-lead signals. The `insta_stories` table is populated by an
+external n8n workflow, "Insta Outbound Sales Automations" (exported as
 `n8n - Insta Outbound Sales Automations.json` in this repo — not run from
 here, just kept for reference). That workflow: finds batches of speakers in
 Supabase `speakers`, scrapes their current Instagram stories via an Apify
-actor, inserts new rows into `insta_stories`, then fires this project's
-scheduled routine (see below) to upload them to Drive. As of 2026-09-08 only
-the "fire the routine" stage of that n8n workflow is actually scheduled — the
-two upstream stages that populate new `insta_stories` rows are disabled, so
-don't assume new rows will show up on their own; check n8n if none are
-appearing. That workflow also has a known bug: one of its nodes hardcodes
-`batch_no = 1` instead of using the current loop's batch.
+actor, inserts new rows into `insta_stories`, fires this project's uploader
+routine (see below) to save them to Drive, and — on its own separate daily
+schedule — fires this project's second routine to analyze them. As of
+2026-09-08 the batch-discovery → scrape → insert → upload chain is fully
+live (previously only the "fire the uploader" stage was scheduled; the
+upstream stages have since been consolidated into one continuous enabled
+chain — see the n8n workflow section below). That workflow still has a
+known unresolved bug: one of its nodes ("Execute a SQL query2") hardcodes
+`batch_no = 1` instead of using the current loop's batch, so every batch's
+"already ran in the last 24h" check looks at batch 1's history regardless
+of which batch is actually being processed — this now matters for real
+since the chain went live.
 
 ## Key gotcha: can't upload images via chat-connected MCP tools
 The connected Google Drive MCP tool (`create_file`) only accepts inline
@@ -30,6 +36,28 @@ The working approach is `upload_to_drive.js`: a standalone Node script that
 authenticates as a Google Cloud service account and uploads local files
 directly via the Drive v3 API (`googleapis` package), bypassing chat context
 entirely.
+
+## Related gotcha: the same problem exists on download, via a different tool
+The Google Drive MCP connector's `download_file_content` tool has the mirror
+problem: it returns the whole file as base64 text in the tool result (large
+results get auto-saved to a local file, but smaller ones — observed at
+roughly under ~50KB — come back inline instead). When that happens, there's
+no local file to decode from, and the only way to get the bytes onto disk is
+to have the model retype tens of thousands of base64 characters as a
+`Write`/`Bash` tool argument — which is exactly as slow and unreliable as the
+upload-side gotcha above. This caused multi-minute stalls in the
+`scraped_insta_stories_analyzer` routine (below) on 2026-09-08. **Don't use
+`download_file_content` for real image files either.**
+
+The fix is the same shape as the upload fix: `download_from_drive.js`, a
+standalone Node script that authenticates as the same Google Cloud service
+account and streams a Drive file straight to a local path via
+`drive.files.get({ alt: 'media', supportsAllDrives: true })` — no base64
+round-trip through chat context at all. Usage:
+```
+node download_from_drive.js <env|path-to-service-account-key.json> <fileId1> <outputPath1> [<fileId2> <outputPath2> ...]
+```
+Same `env`/file-path credential convention as `upload_to_drive.js`.
 
 ## Drive API gotcha: Shared Drive requires `supportsAllDrives`
 The target Drive folder lives inside a Shared Drive (confirmed via
@@ -70,7 +98,13 @@ node upload_to_drive.js <env|path-to-service-account-key.json> <image1> [image2 
   separately — that happened once (2026-09-08) and left the stored value
   literally starting with `GOOGLE_SERVICE_ACCOUNT_KEY_JSON={...}`, which
   still fails `JSON.parse()`. The value field should contain only the bare
-  `{...}` JSON — no variable name, no `=`.
+  `{...}` JSON — no variable name, no `=`. As of 2026-09-08, both
+  `upload_to_drive.js` and `download_from_drive.js` defensively strip that
+  exact `GOOGLE_SERVICE_ACCOUNT_KEY_JSON=` prefix from the env var value if
+  present, before parsing — so this specific misconfiguration no longer
+  breaks either script even if the env var itself is still set wrong. That's
+  a code-level mitigation, not a fix to the underlying env var — if you're
+  ever setting it fresh, still follow the "bare JSON only" rule above.
 - No Supabase API credential exists in this project — all Supabase access
   (interactive sessions and the scheduled routine) goes through the Supabase
   MCP connector, which can read and write `insta_stories` directly.
@@ -111,16 +145,18 @@ https://api.anthropic.com/v1/claude_code/routines/trig_01LH7zt2K5iXRXeyj1Dfjpb8/
 `anthropic-beta` headers — see the n8n workflow's "HTTP Request1" node for a
 working example). Both the cron schedule and this direct API trigger are
 active at the same time; the n8n workflow above calls it via this endpoint
-right after a fresh scrape, and again on its own schedule.
+chained right after a fresh scrape completes (its old separate standalone
+daily-fire schedule in n8n, "Schedule Trigger2", has since been removed as
+redundant — see the n8n workflow section below).
 
-**Known unresolved issue (2026-09-08):** `GOOGLE_SERVICE_ACCOUNT_KEY_JSON`'s
-value on the cloud environment still has the literal prefix
-`GOOGLE_SERVICE_ACCOUNT_KEY_JSON=` baked into it (see the credentials gotcha
-above) — the routine only succeeded once by detecting this mid-run and
-stripping the prefix in that session only, which is not a persisted fix. The
-next run that finds real rows to upload will fail the same way the original
-bug did, until the env var's value is corrected in claude.ai/code environment
-settings to contain only the bare JSON.
+**Known issue, now mitigated at the code level (2026-09-08):**
+`GOOGLE_SERVICE_ACCOUNT_KEY_JSON`'s value on the cloud environment has
+previously had the literal prefix `GOOGLE_SERVICE_ACCOUNT_KEY_JSON=` baked
+into it (see the credentials gotcha above). `upload_to_drive.js` now strips
+that prefix defensively before parsing, so this no longer breaks uploads
+even if the env var itself is still set wrong — but the env var's actual
+value in claude.ai/code environment settings hasn't been independently
+re-verified since.
 
 ## Second routine: "scraped_insta_stories_analyzer"
 A second cloud routine (id `trig_01QdunLBvdnu7ZK5zmYb6g35`) automates the
@@ -129,29 +165,32 @@ Instagram Story Scraper user guide doc). It finds `insta_stories` rows with
 `status = 'processed'` AND `description IS NULL` (via Supabase MCP), locates
 that row's already-uploaded image in the Drive folder by matching the
 `<Speaker> - story <id> - <date>.jpg` naming convention (via the Google Drive
-MCP connector's `search_files`), downloads and actually views the image
-(`download_file_content` + decode base64 to a local `.jpg` + `Read`), and
-fills in `description`, `org`, `event_name`, `poc`, `poc_email`,
-`poc_position` — leaving `description` NULL on failure so the row retries
-next run, same success-gates-the-write pattern as the uploader routine.
-It never touches `insta_story_image_url`/the Instagram CDN, so the egress
-gotcha above doesn't apply to it.
+MCP connector's `search_files`, which also supplies `contentSnippet` — Drive's
+own OCR text + Vision-API labels — and each file's `viewUrl`), downloads it
+with `download_from_drive.js` (see the download gotcha above — **not** the
+Drive MCP connector's `download_file_content`, which caused multi-minute
+stalls), views it with `Read`, and fills in `description`, `org`,
+`event_name`, `poc`, `poc_email`, `poc_position`, and `saved_img_link`
+(the file's `viewUrl`) — leaving `description` NULL on failure so the row
+retries next run, same success-gates-the-write pattern as the uploader
+routine. `saved_img_link` is set whenever a Drive file is found for the row,
+regardless of whether the image could be viewed directly or only analyzed
+via text. It never touches `insta_story_image_url`/the Instagram CDN, so the
+egress gotcha above doesn't apply to it.
 
 Unlike the uploader routine, this one attaches **two** MCP connectors
 (Supabase + Google Drive, both trimmed from the account's full connector
-list) and allows `Bash` + `Read` (Read for viewing the decoded image).
+list) and allows `Bash` + `Read` (Read for viewing the downloaded image).
 
-**Created disabled, as an API-trigger-only routine — but the API token has
-not been generated yet.** The `RemoteTrigger` create API has no field for
-generating an API trigger token (the existing uploader routine's token was
-generated by a manual step in claude.ai/code UI, per the chat history at
-`chat_history/0809260959_chat_history.txt`) — it requires exactly one of
-`cron_expression`/`run_once_at`, so it was created with an inert
-`cron_expression` (`0 5 * * *`) and `enabled: false` so it never fires on its
-own. Whoever wants to actually run this needs to either enable it and add an
-API trigger via the routine's page at
-`https://claude.ai/code/routines/trig_01QdunLBvdnu7ZK5zmYb6g35`, or fire it
-manually from a Claude Code session via `RemoteTrigger action: "run"`. As of
-creation, no run has ever been fired — all 11 existing rows are still
-pending (`status='processed'` and `description IS NULL`) and will be
-backfilled on its first run.
+As of 2026-09-08 this routine is **enabled** as a **pure API trigger** (no
+`cron_expression` at all — the `RemoteTrigger` create API has no field for
+generating an API trigger token or for omitting a schedule entirely, so it
+was first created with an inert placeholder cron and `enabled: false`, then
+switched to this via a manual step in claude.ai/code UI, same as the
+uploader routine's token). It has a generated API token and can be fired
+with `POST
+https://api.anthropic.com/v1/claude_code/routines/trig_01QdunLBvdnu7ZK5zmYb6g35/fire`
+(same Bearer-auth pattern as the uploader). The n8n workflow below calls it
+on its own daily schedule ("Schedule Trigger3", 20:00 — 30 minutes after the
+scrape-and-upload chain, to give uploads time to land in Drive first).
+Verified working end-to-end via manual test runs on 2026-09-08.
