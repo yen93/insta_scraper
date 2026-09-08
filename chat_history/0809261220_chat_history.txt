@@ -1,0 +1,78 @@
+================================================================================
+CHAT HISTORY EXPORT — 2026-09-08
+Session: Built and created a second scheduled routine that reads each
+scraped Instagram story image and fills in booking-lead columns on
+insta_stories, using a plan-mode research pass first.
+================================================================================
+
+--------------------------------------------------------------------------------
+USER:
+Provided a Google Doc link (the "Instagram Story Scraper — User Guide") and
+the local chat_history folder as context, then asked for three things: (1)
+run `select * from insta_stories where status = 'processed' and description
+is null`, (2) create a new routine called scraped_insta_stories_analyzer to
+process each queried row's story image and fill in description, org,
+event_name, poc, poc_email, poc_position, and (3) noted the images live in
+the "Instagram Story Scraper" Drive folder.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Session started in plan mode. Researched before proposing anything:
+- Confirmed via information_schema that insta_stories already has
+  description/org/event_name/poc/poc_email/poc_position as existing nullable
+  text columns (no migration needed), and that the requested query currently
+  matches all 11 rows in the table (ids 1-5, 11-16) — description has simply
+  never been populated.
+- Fetched the Google Doc via the Google Drive MCP connector's
+  read_file_content (direct WebFetch got a 401, doc needs authenticated
+  access) — it's the project's user guide, and explicitly calls out that
+  "reading it for booking clues is still a manual step," which is exactly
+  what this new routine automates.
+- Listed the Drive folder's contents via search_files and confirmed the
+  naming convention "<Speaker> - story <id> - <date>.jpg", which lets a
+  Supabase row be matched to its Drive file by id. Also noticed search_files
+  results include a contentSnippet with Drive's own OCR'd text and Vision-API
+  image labels for each photo — useful supplementary signal.
+- Test-called download_file_content on one image and confirmed it returns
+  the file as base64 JSON (auto-saved to a local file when large), which can
+  be decoded to a real .jpg and viewed with the Read tool for actual vision
+  analysis — a different, workable path than the inline-base64 upload gotcha
+  already documented in CLAUDE.md (that one is about outbound content into
+  create_file, not inbound download).
+- Pulled the existing "insta_stories Drive Uploader" routine's full config
+  via RemoteTrigger as a template for the new routine's shape (mcp_connections,
+  allowed_tools, prompt style, API-trigger mechanism).
+- Asked two clarifying questions before finalizing the plan: whether the new
+  routine should run on a cron schedule, and whether to fire it immediately
+  to backfill the 11 pending rows. User chose "API trigger only, no cron"
+  and "no, just create it, don't fire now."
+- Wrote the plan file, got it approved, then used the `schedule` skill to
+  create the routine: name scraped_insta_stories_analyzer, MCP connectors
+  Supabase (reusing the uploader's connector) + Google Drive, allowed_tools
+  Bash + Read, same git repo. Discovered the RemoteTrigger create API has no
+  field to generate an API-trigger token (that's a manual claude.ai/code UI
+  step, same as the uploader routine's token) and requires exactly one of
+  cron_expression/run_once_at — so created it with an inert placeholder cron
+  (0 5 * * *) and enabled: false, so it can't fire on its own until someone
+  either enables/API-triggers it in the UI or fires it manually via
+  RemoteTrigger. Result: trig_01QdunLBvdnu7ZK5zmYb6g35.
+- Documented the new routine in CLAUDE.md (its purpose, the two attached
+  connectors, and the pending manual API-trigger-token step) but did not
+  commit or push, since that wasn't requested yet.
+
+--------------------------------------------------------------------------------
+USER:
+Ran /dcp.
+
+--------------------------------------------------------------------------------
+ASSISTANT:
+Updated as_built.txt: expanded the insta_stories column list to include the
+six new booking-lead columns and explained the description-IS-NULL
+completion-marker convention, and added a full AUTOMATIONS entry for
+scraped_insta_stories_analyzer (disabled, inert cron, no API token yet,
+never fired, 11 rows still pending). CLAUDE.md needed no further edit since
+it was already updated earlier in the session. Wrote this chat-history file.
+Next: stage, commit, and push.
+================================================================================
+END OF EXPORT
+================================================================================

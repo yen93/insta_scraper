@@ -36,10 +36,17 @@ EXTERNAL INTEGRATIONS
 
 DATA STORES
 - Supabase table public.insta_stories — columns: id, created_at, speaker,
-  insta_story_image_url, insta_story_vid_url, insta_handle, status (text,
-  nullable). Populated by the n8n workflow below. `status` is set to
-  'processed' once a row's image has been uploaded to Drive; NULL means not
-  yet processed.
+  insta_story_image_url, insta_story_vid_url, insta_handle, status,
+  description, org, event_name, poc, poc_email, poc_position (all text,
+  nullable except id/created_at). Populated by the n8n workflow below.
+  `status` is set to 'processed' once a row's image has been uploaded to
+  Drive; NULL means not yet processed. `description`/`org`/`event_name`/
+  `poc`/`poc_email`/`poc_position` are filled in by the
+  scraped_insta_stories_analyzer routine below once it looks at the row's
+  Drive image; `description IS NULL` is the marker it uses to find rows it
+  hasn't analyzed yet (description is always filled once analysis
+  completes, even when nothing else is identifiable — the other five
+  columns are left NULL when genuinely not identifiable in the image).
 - Supabase table public.speakers — columns include proper_name, batch,
   insta_handle, insta_profile_link, status. Source list of people to scrape
   Instagram stories for; owned/populated outside this project.
@@ -80,6 +87,23 @@ AUTOMATIONS / ROUTINES
   that finds real rows to upload will fail identically to the original
   credential bug unless this is corrected in claude.ai/code environment
   settings (value should be ONLY the raw `{...}` JSON, no `KEY=` prefix).
+
+- "scraped_insta_stories_analyzer" (Claude Code cloud routine, id
+  trig_01QdunLBvdnu7ZK5zmYb6g35) — created 2026-09-08, currently DISABLED
+  with an inert placeholder cron (0 5 * * *) and no API trigger token yet
+  generated (the create API has no field for that; it's a manual step in
+  claude.ai/code UI, same as the uploader routine's token). Queries
+  insta_stories for status='processed' AND description IS NULL, finds each
+  row's image in the Drive folder by matching the "<Speaker> - story <id> -
+  <date>.jpg" naming convention (Google Drive MCP connector's search_files),
+  downloads and views it (download_file_content + base64 decode + Read),
+  and fills in description/org/event_name/poc/poc_email/poc_position —
+  leaving description NULL on failure so the row retries next run. Attached
+  MCP connectors: Supabase + Google Drive. Allowed tools: Bash, Read. Git
+  source: this repo (main). Never fired as of creation — all 11 existing
+  rows are still pending and will be backfilled on its first run (manual
+  `RemoteTrigger action: "run"`, or once enabled/API-triggered via its
+  claude.ai/code page).
 
 - "Insta Outbound Sales Automations" (n8n workflow; export checked into this
   repo as `n8n - Insta Outbound Sales Automations.json`) — the external
